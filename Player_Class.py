@@ -3,33 +3,46 @@ import os
 from dotenv import load_dotenv
 import json
 import time
+import climage
+from PIL import Image
+from io import BytesIO
+
+from pyarrow.types import is_unicode
 
 load_dotenv()
 API_KEY = os.getenv("RIOT_API_KEY")
 
 class Player:
 
-    def __init__(self, summoner_name, summoner_tag, region, count, version_number):
+    def __init__(self, summoner_name, summoner_tag, region, count):
         self.puuid = None
         self.region_code = None
+        self.summoner_level = None
+        self.pfp_id = None
+        self.version_number = None
 
         self.summoner_name = summoner_name
         self.summoner_tag = summoner_tag
         self.region = region
         self.count = count
-        self.version_number = version_number
 
         self.set_puuid()
         self.set_region_code()
+        self.set_summoner_level()
+        self.set_pfp_icon()
+        self.set_version_number()
 
     def print_player_data(self):
-        print(self.puuid)
-        print(self.region_code)
-        print(self.summoner_name)
-        print(self.summoner_tag)
-        print(self.region)
-        print(self.count)
-        print(self.version_number)
+        print(f"PUUID: {self.puuid}")
+        print(f"Level: {self.summoner_level}")
+        print(f"Name: {self.summoner_name}")
+        print(f"Tag: {self.summoner_tag}")
+        print(f"Region: {self.region}")
+        print(f"Region Code: {self.region_code}")
+        print(f"Profile Picture ID: {self.pfp_id}")
+        print(f"Count: {self.count}")
+        print(f"Version Number: {self.version_number}")
+
 
     def get_link_for_puuid(self) -> str:
         return f"https://{self.region}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{self.summoner_name}/{self.summoner_tag}?api_key={API_KEY}"
@@ -45,6 +58,24 @@ class Player:
 
     def get_link_for_data_dragon(self) -> str:
         return f"http://ddragon.leagueoflegends.com/cdn/{self.version_number}/data/en_US/champion.json"
+
+    def get_link_for_summoner_profile(self) -> str:
+        return f"https://{self.region_code}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{self.puuid}?api_key={API_KEY}"
+
+    def get_link_for_live_match(self):
+        return f"https://{self.region_code}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{self.puuid}?api_key={API_KEY}"
+
+    def get_link_for_version_number(self):
+        return f"https://ddragon.leagueoflegends.com/api/versions.json"
+
+    def get_most_recent_version(self, link_for_version_number : str):
+        page = requests.get(link_for_version_number)
+        page_json = json.loads(page.content)
+        most_recent_version = page_json[0]
+        return most_recent_version
+
+    def set_version_number(self):
+        self.version_number = self.get_most_recent_version(self.get_link_for_version_number())
 
     def get_variable_from_link(self, link: str, variable: str) -> str:
         page = requests.get(link)
@@ -86,10 +117,8 @@ class Player:
             else:
                 raise ValueError("Could not find player with puuid")
             match_data.append(page_json["info"]["participants"][participant_id])
-            time.sleep(1.21)
+            time.sleep(1.21) # CAN BE REMOVED BELOW A COUNT OF 20
             # bad_match_tracker = bad_match_tracker + 1
-            # print(match_data)
-            # print (bad_match_tracker)
         return match_data
 
     def calculate_win_rate(self, each_match_data: list) -> float:
@@ -149,9 +178,9 @@ class Player:
         link_mast = self.get_link_for_player_mastery()
         link_dd = self.get_link_for_data_dragon()
 
-        list1 = self.get_all_champion_masteries(link_mast)
-        dict1 = self.find_champion_ids_to_names(link_dd)
-        name_to_mastery_points = self.match_champion_name_to_champion_mastery(list1, dict1)
+        list_of_champion_masteries = self.get_all_champion_masteries(link_mast)
+        dictionary_of_champion_ids_and_names = self.find_champion_ids_to_names(link_dd)
+        name_to_mastery_points = self.match_champion_name_to_champion_mastery(list_of_champion_masteries, dictionary_of_champion_ids_and_names)
         return name_to_mastery_points
 
     def print_champion_name_to_champion_mastery(self):
@@ -160,3 +189,81 @@ class Player:
         for name, points in self.get_champion_name_to_champion_mastery().items():
             print(f"{name}: {points}")
         print("--------------------")
+
+    def get_summoner_level(self, link_for_summoner : str):
+        return self.get_variable_from_link(link_for_summoner, "summonerLevel")
+
+    def set_summoner_level(self):
+        self.summoner_level = self.get_summoner_level(self.get_link_for_summoner_profile())
+
+    def get_summoner_pfp_id(self, link_for_summoner : str):
+        return self.get_variable_from_link(link_for_summoner, "profileIconId")
+
+    def set_pfp_icon(self):
+        self.pfp_id = self.get_summoner_pfp_id(self.get_link_for_summoner_profile())
+
+    def get_summoner_pfp_img(self, link_for_summoner : str):
+        pfp_id = self.get_summoner_pfp_id(link_for_summoner)
+        page = requests.get(f"https://ddragon.leagueoflegends.com/cdn/{self.version_number}/img/profileicon/{pfp_id}.png")
+        return page
+
+    def display_summoner_pfp_img(self):
+        page = self.get_summoner_pfp_img(self.get_link_for_summoner_profile())
+        img = Image.open(BytesIO(page.content))
+        buffer = BytesIO() # Puts it into RAM
+        img.save(buffer, format="PNG") # Put image data into virtual container in RAM
+        buffer.seek(0) # Move head back to start after writing
+        output = climage.convert(buffer, is_unicode=True, width = 40)
+        print(output)
+
+    def get_champion_in_current_match(self, link_for_live_match : str) -> str:
+        page = requests.get(link_for_live_match)
+        page_json = json.loads(page.content)
+        participants = page_json["participants"]
+        for participant in participants:
+            if self.puuid == participant["puuid"]:
+                current_champion_id = participant["championId"]
+                dict_of_champions = self.find_champion_ids_to_names(self.get_link_for_data_dragon())
+                return dict_of_champions[current_champion_id]
+        return ("Could not find champion in current match")
+
+    def get_banned_champions_in_current_match(self, link_for_live_match : str) -> list:
+        list_of_banned_champions_in_current_match = []
+        page = requests.get(link_for_live_match)
+        page_json = json.loads(page.content)
+        banned_champions = page_json["bannedChampions"]
+        for champions in banned_champions:
+            champion_id_to_team = ((champions["championId"]), (champions["teamId"]))
+            list_of_banned_champions_in_current_match.append(champion_id_to_team)
+        return list_of_banned_champions_in_current_match
+
+    def match_banned_champion_id_to_name(self, list_of_banned_champions_in_current_match : list) -> dict:
+        BLUE_SIDE_ID = 100
+        RED_SIDE_ID = 200
+        dict_of_champions = self.find_champion_ids_to_names(self.get_link_for_data_dragon())
+        bans_dict = {
+            "blue_side" : [],
+            "red_side" : []
+        }
+        for champion_id, team_id in list_of_banned_champions_in_current_match:
+            if team_id == BLUE_SIDE_ID:
+                bans_dict["blue_side"].append(dict_of_champions[champion_id])
+            elif team_id == RED_SIDE_ID:
+                bans_dict["red_side"].append(dict_of_champions[champion_id])
+            else:
+                raise ValueError("Team ID not found")
+        return bans_dict
+
+    def print_side_bans(self):
+        current_banned_champions_ids = self.get_banned_champions_in_current_match(self.get_link_for_live_match())
+        blue_and_red_side_champion_name_bans = self.match_banned_champion_id_to_name(current_banned_champions_ids)
+        blue_side = blue_and_red_side_champion_name_bans["blue_side"]
+        red_side = blue_and_red_side_champion_name_bans["red_side"]
+
+        print("Blue side bans:")
+        for champion in blue_side:
+            print(champion)
+        print ("")
+        print("Red side bans:")
+        for champion in red_side:
+            print(champion)
