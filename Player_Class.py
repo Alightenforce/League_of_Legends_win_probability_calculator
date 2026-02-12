@@ -134,10 +134,14 @@ class Player:
         win_rate_percent = win_rate * 100
         return round(win_rate_percent, 2)
 
-    def get_win_rate(self):
+    def get_player_stats_from_previous_matches(self):
         match_history_link = self.get_link_for_player_match_history()
         match_history_as_list = self.match_history_as_list(match_history_link)
         each_match_data_for_player = self.get_each_match_data_for_player(match_history_as_list)
+        return each_match_data_for_player
+
+    def get_win_rate(self):
+        each_match_data_for_player = self.get_player_stats_from_previous_matches()
         winrate = self.calculate_win_rate(each_match_data_for_player)
         return winrate
 
@@ -267,3 +271,57 @@ class Player:
         print("Red side bans:")
         for champion in red_side:
             print(champion)
+
+    # Nested dictionary, first initliases dictionary with champion names and sets wins and losses
+    # for each champion to 0. Then checks the match data to determine if they win, if they win
+    # add 1 to the wins, otherwise add 1 to the losses
+    def get_win_and_losses_per_champion(self) -> dict[any, any]:
+        dict_of_win_and_losses_per_champion = {}
+        each_match_data = self.get_player_stats_from_previous_matches()
+        for each_match in each_match_data:
+            dict_of_win_and_losses_per_champion[each_match["championName"]] = {"Wins" : 0, "Losses" : 0}
+        for each_match in each_match_data:
+            if each_match["win"]:
+                dict_of_win_and_losses_per_champion[each_match["championName"]]["Wins"] += 1
+            else:
+                dict_of_win_and_losses_per_champion[each_match["championName"]]["Losses"] += 1
+        return dict_of_win_and_losses_per_champion
+
+    def calculate_win_rate_per_champion(self, get_win_and_losses_per_champion : dict) -> dict:
+        # print(get_win_and_losses_per_champion)
+        champ_name_to_win_rate_dict = {}
+        for champion_name, wins_and_losses_dict in get_win_and_losses_per_champion.items():
+            wins = 0
+            losses = 0
+            # print(wins_and_losses_dict)
+            for string, wins_and_losses in wins_and_losses_dict.items():
+                # print(f"Name: {string}")
+                # print(f"{wins_and_losses}")
+                if string == "Wins":
+                    wins += wins_and_losses
+                elif string == "Losses":
+                    losses += wins_and_losses
+                else:
+                    raise ValueError("Could not find win or loss")
+            # print("Champion Name:", champion_name)
+            # print("Wins:", wins)
+            # print("Losses:", losses)
+            if losses == 0:
+                win_rate = 1
+            else:
+                win_rate = wins / (wins + losses)
+            win_rate_percent = round(win_rate * 100, 2)
+            champ_name_to_win_rate_dict[champion_name] = win_rate_percent
+
+        return (champ_name_to_win_rate_dict)
+
+    def get_win_rate_per_champion(self) -> dict:
+        dict_of_win_and_losses_per_champion = self.get_win_and_losses_per_champion()
+        champ_name_to_win_rate_dict = self.calculate_win_rate_per_champion(dict_of_win_and_losses_per_champion)
+        return champ_name_to_win_rate_dict
+
+    def print_win_rate_per_champion(self):
+        champ_name_to_win_rate_dict = self.get_win_rate_per_champion()
+        print(f"{self.summoner_name}'s winrate for each champion over the last {self.count} games")
+        for champion_name, win_rate_percent in champ_name_to_win_rate_dict.items():
+            print(f"{champion_name}: {win_rate_percent}%")
