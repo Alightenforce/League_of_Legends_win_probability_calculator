@@ -1,3 +1,5 @@
+from turtledemo.sorting_animate import start_ssort
+
 import requests
 import os
 from dotenv import load_dotenv
@@ -6,7 +8,7 @@ import time
 import climage
 from PIL import Image
 from io import BytesIO
-
+from Riot_API import Riot_API
 from pyarrow.types import is_unicode
 
 load_dotenv()
@@ -19,18 +21,35 @@ class Player:
         self.region_code = None
         self.summoner_level = None
         self.pfp_id = None
+
         self.version_number = None
+        self.champion_lookup = None
+        self.match_data = None
+
+        self.api = Riot_API()
 
         self.summoner_name = summoner_name
         self.summoner_tag = summoner_tag
         self.region = region
         self.count = count
 
-        self.set_puuid()
-        self.set_region_code()
-        self.set_summoner_level()
-        self.set_pfp_icon()
-        self.set_version_number()
+    def update_profile(self):
+        self.puuid = self.api.get_account_data(self.region, self.summoner_name, self.summoner_tag)["puuid"]
+        self.region_code = self.api.get_region_data(self.region, self.puuid)["region"]
+        data = self.api.get_summoner_data(self.region_code, self.puuid)
+        self.summoner_level = data["summonerLevel"]
+        self.pfp_id = data["profileIconId"]
+        self.version_number = self.api.get_most_recent_version()
+
+    def fetch_champion_lookup(self):
+        if self.champion_lookup is None:
+            self.champion_lookup = self.api.get_champion_data(self.version_number)
+        return self.champion_lookup
+
+    def fetch_match_data(self):
+        if self.match_data is None:
+            self.match_data = self.get_player_stats_from_previous_matches()
+        return self.match_data
 
     def print_player_data(self):
         print(f"PUUID: {self.puuid}")
@@ -43,88 +62,38 @@ class Player:
         print(f"Count: {self.count}")
         print(f"Version Number: {self.version_number}")
 
+    ###################################################### Win Rate ##########################################################
 
-    def get_link_for_puuid(self) -> str:
-        return f"https://{self.region}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{self.summoner_name}/{self.summoner_tag}?api_key={API_KEY}"
+    def get_player_stats_from_previous_matches(self):
+        data = self.api.get_match_ids(self.region, self.puuid, self.count)
+        each_match_data_for_player = self.get_each_match_data_for_player(data)
+        return each_match_data_for_player
 
-    def get_link_for_region_code(self) -> str:
-        return f"https://{self.region}.api.riotgames.com/riot/account/v1/region/by-game/lol/by-puuid/{self.puuid}?api_key={API_KEY}"
-
-    def get_link_for_player_match_history(self) -> str:
-        return f"https://{self.region}.api.riotgames.com/lol/match/v5/matches/by-puuid/{self.puuid}/ids?start=0&count={self.count}&api_key={API_KEY}"
-
-    def get_link_for_player_mastery(self) -> str:
-        return f"https://{self.region_code}.api.riotgames.com/lol/champion-mastery/v4/champion-masteries/by-puuid/{self.puuid}?api_key={API_KEY}"
-
-    def get_link_for_data_dragon(self) -> str:
-        return f"http://ddragon.leagueoflegends.com/cdn/{self.version_number}/data/en_US/champion.json"
-
-    def get_link_for_summoner_profile(self) -> str:
-        return f"https://{self.region_code}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{self.puuid}?api_key={API_KEY}"
-
-    def get_link_for_live_match(self):
-        return f"https://{self.region_code}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{self.puuid}?api_key={API_KEY}"
-
-    def get_link_for_version_number(self):
-        return f"https://ddragon.leagueoflegends.com/api/versions.json"
-
-    def get_most_recent_version(self, link_for_version_number : str):
-        page = requests.get(link_for_version_number)
-        page_json = json.loads(page.content)
-        most_recent_version = page_json[0]
-        return most_recent_version
-
-    def set_version_number(self):
-        self.version_number = self.get_most_recent_version(self.get_link_for_version_number())
-
-    def get_variable_from_link(self, link: str, variable: str) -> str:
-        page = requests.get(link)
-        page_json = json.loads(page.content)
-        return_variable = page_json[variable]
-        return return_variable
-
-    def get_puuid_from_link(self, link : str) -> str:
-        return self.get_variable_from_link(link, "puuid")
-
-    def set_puuid(self):
-        self.puuid = self.get_puuid_from_link(self.get_link_for_puuid())
-
-    def get_region_code_from_link(self, link : str) -> str:
-        return self.get_variable_from_link(link, "region")
-
-    def set_region_code(self):
-        self.region_code = self.get_region_code_from_link(self.get_link_for_region_code())
-
-    def match_history_as_list(self, match_history_link: str) -> list:
-        page = requests.get(match_history_link)
-        page_json = json.loads(page.content)
-        return page_json
+    def get_win_rate(self):
+        each_match_data_for_player = self.get_player_stats_from_previous_matches()
+        winrate = self.calculate_win_rate(each_match_data_for_player)
+        return winrate
 
     def get_each_match_data_for_player(self, match_history: list) -> list[list]:
         match_data = []
-        # bad_match_tracker = 0
-        session = requests.Session()
-        for match in match_history:
+        for match_id in match_history:
             participant_id = 0
-            link = f"https://{self.region}.api.riotgames.com/lol/match/v5/matches/{match}?api_key={API_KEY}"
-            page = session.get(link)
-            page_json = json.loads(page.content)
-            participants_in_current_match_list = page_json["metadata"]["participants"]
+            data = self.api.get_match_detail(self.region, match_id)
+            participants_in_current_match_list = data["metadata"]["participants"]
             for participant_puuid in participants_in_current_match_list:
                 if participant_puuid == self.puuid:
                     break
                 participant_id += 1
             else:
                 raise ValueError("Could not find player with puuid")
-            match_data.append(page_json["info"]["participants"][participant_id])
-            time.sleep(1.21) # CAN BE REMOVED BELOW A COUNT OF 20
+            match_data.append(data["info"]["participants"][participant_id])
+            # time.sleep(1.21) # CAN BE REMOVED BELOW A COUNT OF 20
             # bad_match_tracker = bad_match_tracker + 1
         return match_data
 
     def calculate_win_rate(self, each_match_data: list) -> float:
         wins = 0
         losses = 0
-
         for each_match in each_match_data:
             if each_match["win"]:
                 wins += 1
@@ -134,41 +103,31 @@ class Player:
         win_rate_percent = win_rate * 100
         return round(win_rate_percent, 2)
 
-    def get_player_stats_from_previous_matches(self):
-        match_history_link = self.get_link_for_player_match_history()
-        match_history_as_list = self.match_history_as_list(match_history_link)
-        each_match_data_for_player = self.get_each_match_data_for_player(match_history_as_list)
-        return each_match_data_for_player
-
-    def get_win_rate(self):
-        each_match_data_for_player = self.get_player_stats_from_previous_matches()
-        winrate = self.calculate_win_rate(each_match_data_for_player)
-        return winrate
-
     def print_win_rate(self):
         print("--------------------")
         print("Player's winrate: ")
         print(f"{self.summoner_name}'s win rate is {self.get_win_rate()}% over the past {self.count} matches")
         print("--------------------")
 
-    def get_all_champion_masteries(self, champion_masteries_link : str) -> list:
-        list_of_champion_masteries = []
-        page = requests.get(champion_masteries_link)
-        page_json = json.loads(page.content)
-        for champion in page_json:
-            id_to_mastery = ((champion["championId"]), (champion["championPoints"]))
-            list_of_champion_masteries.append(id_to_mastery)
-        return list_of_champion_masteries
+###################################################### Win Rate ##########################################################
 
+###################################################### Mastery ##########################################################
     # Dictionary uses O(1) over a list which would use O(n)
-    def find_champion_ids_to_names(self, data_dragon_link : str) -> dict:
+    def find_champion_ids_to_names(self) -> dict:
         dict_of_champion_ids_to_names = {}
-        page = requests.get(data_dragon_link)
-        page_json = json.loads(page.content)
-        all_champion_names = page_json["data"]
+        data = self.api.get_champion_data(self.version_number)
+        all_champion_names = data["data"]
         for champion in all_champion_names.values():
             dict_of_champion_ids_to_names[int((champion["key"]))] = champion["name"]
         return dict_of_champion_ids_to_names
+
+    def get_all_champion_masteries(self) -> list:
+        list_of_champion_masteries = []
+        data = self.api.get_mastery_data(self.region_code, self.puuid)
+        for champion in data:
+            id_to_mastery = ((champion["championId"]), (champion["championPoints"]))
+            list_of_champion_masteries.append(id_to_mastery)
+        return list_of_champion_masteries
 
     def match_champion_name_to_champion_mastery(self, list_of_champion_masteries : list, dict_of_champion_ids_to_names : dict) -> dict:
         champion_name_to_champion_mastery = {}
@@ -179,11 +138,8 @@ class Player:
         return champion_name_to_champion_mastery
 
     def get_champion_name_to_champion_mastery(self) -> dict:
-        link_mast = self.get_link_for_player_mastery()
-        link_dd = self.get_link_for_data_dragon()
-
-        list_of_champion_masteries = self.get_all_champion_masteries(link_mast)
-        dictionary_of_champion_ids_and_names = self.find_champion_ids_to_names(link_dd)
+        list_of_champion_masteries = self.get_all_champion_masteries()
+        dictionary_of_champion_ids_and_names = self.find_champion_ids_to_names()
         name_to_mastery_points = self.match_champion_name_to_champion_mastery(list_of_champion_masteries, dictionary_of_champion_ids_and_names)
         return name_to_mastery_points
 
@@ -194,48 +150,23 @@ class Player:
             print(f"{name}: {points}")
         print("--------------------")
 
-    def get_summoner_level(self, link_for_summoner : str):
-        return self.get_variable_from_link(link_for_summoner, "summonerLevel")
+###################################################### Mastery ##########################################################
 
-    def set_summoner_level(self):
-        self.summoner_level = self.get_summoner_level(self.get_link_for_summoner_profile())
-
-    def get_summoner_pfp_id(self, link_for_summoner : str):
-        return self.get_variable_from_link(link_for_summoner, "profileIconId")
-
-    def set_pfp_icon(self):
-        self.pfp_id = self.get_summoner_pfp_id(self.get_link_for_summoner_profile())
-
-    def get_summoner_pfp_img(self, link_for_summoner : str):
-        pfp_id = self.get_summoner_pfp_id(link_for_summoner)
-        page = requests.get(f"https://ddragon.leagueoflegends.com/cdn/{self.version_number}/img/profileicon/{pfp_id}.png")
-        return page
-
-    def display_summoner_pfp_img(self):
-        page = self.get_summoner_pfp_img(self.get_link_for_summoner_profile())
-        img = Image.open(BytesIO(page.content))
-        buffer = BytesIO() # Puts it into RAM
-        img.save(buffer, format="PNG") # Put image data into virtual container in RAM
-        buffer.seek(0) # Move head back to start after writing
-        output = climage.convert(buffer, is_unicode=True, width = 40)
-        print(output)
-
-    def get_champion_in_current_match(self, link_for_live_match : str) -> str:
-        page = requests.get(link_for_live_match)
-        page_json = json.loads(page.content)
-        participants = page_json["participants"]
+###################################################### Live Match ##########################################################
+    def get_champion_in_current_match(self) -> str:
+        data = self.api.get_active_game(self.region_code, self.puuid)
+        participants = data["participants"]
         for participant in participants:
             if self.puuid == participant["puuid"]:
                 current_champion_id = participant["championId"]
-                dict_of_champions = self.find_champion_ids_to_names(self.get_link_for_data_dragon())
+                dict_of_champions = self.find_champion_ids_to_names()
                 return dict_of_champions[current_champion_id]
         return ("Could not find champion in current match")
 
-    def get_banned_champions_in_current_match(self, link_for_live_match : str) -> list:
+    def get_banned_champions_in_current_match(self) -> list:
         list_of_banned_champions_in_current_match = []
-        page = requests.get(link_for_live_match)
-        page_json = json.loads(page.content)
-        banned_champions = page_json["bannedChampions"]
+        data = self.api.get_active_game(self.region_code, self.puuid)
+        banned_champions = data["bannedChampions"]
         for champions in banned_champions:
             champion_id_to_team = ((champions["championId"]), (champions["teamId"]))
             list_of_banned_champions_in_current_match.append(champion_id_to_team)
@@ -244,12 +175,16 @@ class Player:
     def match_banned_champion_id_to_name(self, list_of_banned_champions_in_current_match : list) -> dict:
         BLUE_SIDE_ID = 100
         RED_SIDE_ID = 200
-        dict_of_champions = self.find_champion_ids_to_names(self.get_link_for_data_dragon())
+        dict_of_champions = self.find_champion_ids_to_names()
         bans_dict = {
             "blue_side" : [],
             "red_side" : []
         }
         for champion_id, team_id in list_of_banned_champions_in_current_match:
+            if champion_id == -1:
+                champion_name = "No ban"
+            else:
+                champion_name = dict_of_champions[champion_id]
             if team_id == BLUE_SIDE_ID:
                 bans_dict["blue_side"].append(dict_of_champions[champion_id])
             elif team_id == RED_SIDE_ID:
@@ -259,7 +194,7 @@ class Player:
         return bans_dict
 
     def print_side_bans(self):
-        current_banned_champions_ids = self.get_banned_champions_in_current_match(self.get_link_for_live_match())
+        current_banned_champions_ids = self.get_banned_champions_in_current_match()
         blue_and_red_side_champion_name_bans = self.match_banned_champion_id_to_name(current_banned_champions_ids)
         blue_side = blue_and_red_side_champion_name_bans["blue_side"]
         red_side = blue_and_red_side_champion_name_bans["red_side"]
@@ -272,56 +207,82 @@ class Player:
         for champion in red_side:
             print(champion)
 
-    # Nested dictionary, first initliases dictionary with champion names and sets wins and losses
-    # for each champion to 0. Then checks the match data to determine if they win, if they win
-    # add 1 to the wins, otherwise add 1 to the losses
-    def get_win_and_losses_per_champion(self) -> dict[any, any]:
-        dict_of_win_and_losses_per_champion = {}
-        each_match_data = self.get_player_stats_from_previous_matches()
+###################################################### Live Match ##########################################################
+
+###################################################### Champion Specific ##########################################################
+
+    def get_player_stats_per_champion(self) -> dict[any, any]:
+        dict_of_player_stats_per_champion = {}
+        if self.match_data is None:
+            self.fetch_match_data()
+        each_match_data = self.match_data
+
         for each_match in each_match_data:
-            dict_of_win_and_losses_per_champion[each_match["championName"]] = {"Wins" : 0, "Losses" : 0}
-        for each_match in each_match_data:
-            if each_match["win"]:
-                dict_of_win_and_losses_per_champion[each_match["championName"]]["Wins"] += 1
+            champion_name = each_match["championName"]
+            kills = each_match["kills"]
+            deaths = each_match["deaths"]
+            assists = each_match["assists"]
+            win = each_match["win"]
+            if champion_name not in dict_of_player_stats_per_champion:
+                dict_of_player_stats_per_champion[champion_name] = {"Wins" : 0, "Losses" : 0, "Kills" : 0, "Deaths" : 0, "Assists" : 0, "Games" : 0}
+            if win:
+                dict_of_player_stats_per_champion[champion_name]["Wins"] += 1
             else:
-                dict_of_win_and_losses_per_champion[each_match["championName"]]["Losses"] += 1
-        return dict_of_win_and_losses_per_champion
+                dict_of_player_stats_per_champion[champion_name]["Losses"] += 1
+            dict_of_player_stats_per_champion[champion_name]["Kills"] += kills
+            dict_of_player_stats_per_champion[champion_name]["Deaths"] += deaths
+            dict_of_player_stats_per_champion[champion_name]["Assists"] += assists
+            dict_of_player_stats_per_champion[champion_name]["Games"] += 1
+        return dict_of_player_stats_per_champion
 
-    def calculate_win_rate_per_champion(self, get_win_and_losses_per_champion : dict) -> dict:
-        # print(get_win_and_losses_per_champion)
-        champ_name_to_win_rate_dict = {}
-        for champion_name, wins_and_losses_dict in get_win_and_losses_per_champion.items():
-            wins = 0
-            losses = 0
-            # print(wins_and_losses_dict)
-            for string, wins_and_losses in wins_and_losses_dict.items():
-                # print(f"Name: {string}")
-                # print(f"{wins_and_losses}")
-                if string == "Wins":
-                    wins += wins_and_losses
-                elif string == "Losses":
-                    losses += wins_and_losses
-                else:
-                    raise ValueError("Could not find win or loss")
-            # print("Champion Name:", champion_name)
-            # print("Wins:", wins)
-            # print("Losses:", losses)
-            if losses == 0:
-                win_rate = 1
-            else:
-                win_rate = wins / (wins + losses)
-            win_rate_percent = round(win_rate * 100, 2)
-            champ_name_to_win_rate_dict[champion_name] = win_rate_percent
-
-        return (champ_name_to_win_rate_dict)
-
-    def get_win_rate_per_champion(self) -> dict:
-        dict_of_win_and_losses_per_champion = self.get_win_and_losses_per_champion()
-        champ_name_to_win_rate_dict = self.calculate_win_rate_per_champion(dict_of_win_and_losses_per_champion)
-        return champ_name_to_win_rate_dict
+    def calculate_win_rate_per_champion(self) -> dict:
+        win_rate_per_champion = {}
+        player_stats_per_champion = self.get_player_stats_per_champion()
+        for name, stats in player_stats_per_champion.items():
+            wins = stats["Wins"]
+            games = stats["Games"]
+            win_rate = wins / games
+            win_rate_per_champion[name] = {"Win_Rate" : round(win_rate * 100, 2), "Total_Matches" : games}
+        return win_rate_per_champion
 
     def print_win_rate_per_champion(self):
-        champ_name_to_win_rate_dict = self.get_win_rate_per_champion()
-        print(f"{self.summoner_name}'s winrate for each champion over the last {self.count} games")
-        for champion_name, win_rate_percent in champ_name_to_win_rate_dict.items():
-            print(f"{champion_name}: {win_rate_percent}%")
+        win_rate_dict = self.calculate_win_rate_per_champion()
+        print(f"{self.summoner_name}'s win rate per champion over the last {self.count} games):")
+        for champion_name, data in win_rate_dict.items():
+            print(f"{champion_name}: {data['Win_Rate']}% over {data['Total_Matches']} game(s)")
+
+    def get_average_kda_per_champion(self) -> dict:
+        average_kda_per_champion = {}
+        player_stats_per_champion = self.get_player_stats_per_champion()
+        for name, stats in player_stats_per_champion.items():
+            kills = stats["Kills"]
+            deaths = stats["Deaths"]
+            assists = stats["Assists"]
+            games = stats["Games"]
+
+            if deaths == 0:
+                deaths = 1
+
+            avg_kills = round((kills / games), 1)
+            avg_deaths = round((deaths / games), 1)
+            avg_assists = round((assists / games), 1)
+            avg_kda = round((avg_kills + avg_assists) / avg_deaths, 1)
+
+            average_kda_per_champion[name] = {"Avg_Kills" : avg_kills, "Avg_Deaths" : avg_deaths, "Avg_Assists" : avg_assists, "Avg_KDA" : avg_kda}
+        return average_kda_per_champion
+
+    def print_average_kda_per_champion(self):
+        avg_kda_per_champion = self.get_average_kda_per_champion()
+        print(f"{self.summoner_name}'s average KDA per champion over the last {self.count} games):")
+        for champion_name, data in avg_kda_per_champion.items():
+            print(f"{champion_name}: {data['Avg_KDA']} KDA | {data['Avg_Kills']}/{data['Avg_Deaths']}/{data['Avg_Assists']}")
+###################################################### Champion Specific ##########################################################
+
+    def display_summoner_pfp_img(self):
+        page = self.api.get_account_data(self.region_code, self.summoner_name, self.summoner_tag)
+        img = Image.open(BytesIO(page.content))
+        buffer = BytesIO() # Puts it into RAM
+        img.save(buffer, format="PNG") # Put image data into virtual container in RAM
+        buffer.seek(0) # Move head back to start after writing
+        output = climage.convert(buffer, is_unicode=True, width = 40)
+        print(output)
