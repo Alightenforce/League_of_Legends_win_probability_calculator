@@ -1,3 +1,2 @@
-# LoL Win Probability Calculator
-# WIP
+# LoL Win Probability Calculator - WIP
 Gathering all relevant data and will apply mathematical formulae to estimate win probability of current player based on stuff like: current champion played, their mastery, overall winrate, who they're playing with, etc...
