@@ -1,0 +1,64 @@
+import requests
+import os
+from dotenv import load_dotenv
+import json
+import time
+import climage
+from PIL import Image
+from io import BytesIO
+
+class Print_Stats:
+
+    load_dotenv()
+    API_KEY = os.getenv("RIOT_API_KEY")
+
+    def print_player_data(self, player):
+        print("--------------------")
+        print(f"PUUID: {player.puuid}")
+        print(f"Level: {player.summoner_level}")
+        print(f"Name: {player.summoner_name}")
+        print(f"Tag: {player.summoner_tag}")
+        print(f"Region: {player.region}")
+        print(f"Region Code: {player.region_code}")
+        print(f"Profile Picture ID: {player.pfp_id}")
+        print(f"Count: {player.count}")
+        print(f"Version Number: {player.version_number}")
+        print("--------------------")
+
+    def print_win_rate(self, summoner_name, win_rate, match_count):
+        print("--------------------")
+        print("Player's winrate: ")
+        print(f"{summoner_name}'s win rate is {win_rate}% over the past {match_count} matches")
+        print("--------------------")
+
+    def print_champion_name_to_champion_mastery(self, mastery_dict):
+        print("--------------------")
+        print("All player's mastery: ")
+        for name, points in mastery_dict:
+            print(f"{name}: {points}")
+        print("--------------------")
+
+    def print_side_bans(self, side_bans):
+        print("--------------------")
+        print("Blue side bans:")
+        for champion in side_bans.get("blue_side", []):
+            print(champion)
+        print ("")
+        print("Red side bans:")
+        for champion in side_bans.get("red_side", []):
+            print(champion)
+        print("--------------------")
+
+    def print_win_rate_per_champion(self, summoner_name, count, win_rate_per_champion):
+        print("--------------------")
+        print(f"{summoner_name}'s win rate per champion over the last {count} games):")
+        for champion_name, data in win_rate_per_champion.items():
+            print(f"{champion_name}: {data['Win_Rate']}% over {data['Total_Matches']} game(s)")
+        print("--------------------")
+
+    def print_average_kda_per_champion(self, summoner_name, count, average_kda_per_champion):
+        print("--------------------")
+        print(f"{summoner_name}'s average KDA per champion over the last {count} games):")
+        for champion_name, data in average_kda_per_champion.items():
+            print(f"{champion_name}: {data['Avg_KDA']} KDA | {data['Avg_Kills']}/{data['Avg_Deaths']}/{data['Avg_Assists']}")
+        print("--------------------")

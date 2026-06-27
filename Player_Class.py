@@ -9,6 +9,7 @@ import climage
 from PIL import Image
 from io import BytesIO
 from Riot_API import Riot_API
+from Print_Stats import Print_Stats
 from pyarrow.types import is_unicode
 
 load_dotenv()
@@ -27,6 +28,7 @@ class Player:
         self.match_data = None
 
         self.api = Riot_API()
+        self.print_stats= Print_Stats()
 
         self.summoner_name = summoner_name
         self.summoner_tag = summoner_tag
@@ -52,15 +54,7 @@ class Player:
         return self.match_data
 
     def print_player_data(self):
-        print(f"PUUID: {self.puuid}")
-        print(f"Level: {self.summoner_level}")
-        print(f"Name: {self.summoner_name}")
-        print(f"Tag: {self.summoner_tag}")
-        print(f"Region: {self.region}")
-        print(f"Region Code: {self.region_code}")
-        print(f"Profile Picture ID: {self.pfp_id}")
-        print(f"Count: {self.count}")
-        print(f"Version Number: {self.version_number}")
+        self.print_stats.print_player_data(self)
 
     ###################################################### Win Rate ##########################################################
 
@@ -104,10 +98,7 @@ class Player:
         return round(win_rate_percent, 2)
 
     def print_win_rate(self):
-        print("--------------------")
-        print("Player's winrate: ")
-        print(f"{self.summoner_name}'s win rate is {self.get_win_rate()}% over the past {self.count} matches")
-        print("--------------------")
+        self.print_stats.print_win_rate(self.summoner_name, self.get_win_rate(), self.count)
 
 ###################################################### Win Rate ##########################################################
 
@@ -144,11 +135,7 @@ class Player:
         return name_to_mastery_points
 
     def print_champion_name_to_champion_mastery(self):
-        print("--------------------")
-        print("All player's mastery: ")
-        for name, points in self.get_champion_name_to_champion_mastery().items():
-            print(f"{name}: {points}")
-        print("--------------------")
+        self.print_stats.print_champion_name_to_champion_mastery(self.get_champion_name_to_champion_mastery().items())
 
 ###################################################### Mastery ##########################################################
 
@@ -186,26 +173,20 @@ class Player:
             else:
                 champion_name = dict_of_champions[champion_id]
             if team_id == BLUE_SIDE_ID:
-                bans_dict["blue_side"].append(dict_of_champions[champion_id])
+                bans_dict["blue_side"].append(champion_name)
             elif team_id == RED_SIDE_ID:
-                bans_dict["red_side"].append(dict_of_champions[champion_id])
+                bans_dict["red_side"].append(champion_name)
             else:
                 raise ValueError("Team ID not found")
         return bans_dict
 
-    def print_side_bans(self):
+    def get_side_bans(self):
         current_banned_champions_ids = self.get_banned_champions_in_current_match()
         blue_and_red_side_champion_name_bans = self.match_banned_champion_id_to_name(current_banned_champions_ids)
-        blue_side = blue_and_red_side_champion_name_bans["blue_side"]
-        red_side = blue_and_red_side_champion_name_bans["red_side"]
+        return blue_and_red_side_champion_name_bans
 
-        print("Blue side bans:")
-        for champion in blue_side:
-            print(champion)
-        print ("")
-        print("Red side bans:")
-        for champion in red_side:
-            print(champion)
+    def print_side_bans(self):
+        self.print_stats.print_side_bans(self.get_side_bans())
 
 ###################################################### Live Match ##########################################################
 
@@ -246,10 +227,7 @@ class Player:
         return win_rate_per_champion
 
     def print_win_rate_per_champion(self):
-        win_rate_dict = self.calculate_win_rate_per_champion()
-        print(f"{self.summoner_name}'s win rate per champion over the last {self.count} games):")
-        for champion_name, data in win_rate_dict.items():
-            print(f"{champion_name}: {data['Win_Rate']}% over {data['Total_Matches']} game(s)")
+        self.print_stats.print_win_rate_per_champion(self.summoner_name, self.count, self.calculate_win_rate_per_champion())
 
     def get_average_kda_per_champion(self) -> dict:
         average_kda_per_champion = {}
@@ -272,10 +250,8 @@ class Player:
         return average_kda_per_champion
 
     def print_average_kda_per_champion(self):
-        avg_kda_per_champion = self.get_average_kda_per_champion()
-        print(f"{self.summoner_name}'s average KDA per champion over the last {self.count} games):")
-        for champion_name, data in avg_kda_per_champion.items():
-            print(f"{champion_name}: {data['Avg_KDA']} KDA | {data['Avg_Kills']}/{data['Avg_Deaths']}/{data['Avg_Assists']}")
+        self.print_stats.print_average_kda_per_champion(self.summoner_name, self.count, self.get_average_kda_per_champion())
+
 ###################################################### Champion Specific ##########################################################
 
     def display_summoner_pfp_img(self):
