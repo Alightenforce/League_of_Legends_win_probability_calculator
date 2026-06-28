@@ -13,9 +13,13 @@ def main():
    #  player1.print_average_kda_per_champion()
     player2 = Player("Sloppy", "BOMB", "europe", 5)
     player2.update_profile()
-    player2.print_player_data()
-    player2.print_side_bans()
-
+    # player2.print_player_data()
+    # player2.print_side_bans()
+    # print(player2.get_all_player_info_in_current_match())
+    # print(player2.sort_current_match_champions_into_teams())
+    # print(player2.get_champion_and_player_on_each_team_in_current_match())
+    # player2.print_champions_in_current_match()
+    print(player2.print_live_player_champion())
 
 if __name__ == "__main__":
     main()

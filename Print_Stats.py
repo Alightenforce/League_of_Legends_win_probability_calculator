@@ -62,3 +62,22 @@ class Print_Stats:
         for champion_name, data in average_kda_per_champion.items():
             print(f"{champion_name}: {data['Avg_KDA']} KDA | {data['Avg_Kills']}/{data['Avg_Deaths']}/{data['Avg_Assists']}")
         print("--------------------")
+
+    def print_champions_in_current_match(self, players_in_current_game_dict):
+        for team, data_list in players_in_current_game_dict.items():
+            if team == "blue_team":
+                print("--------------------")
+                print("Blue Team: ")
+                for data in data_list:
+                        print (f"Username: {data['username']} | Champion Name: {data['champion_name']}")
+                print("--------------------")
+
+            else:
+                print("--------------------")
+                print ("Red team: ")
+                for data in data_list:
+                    print(f"Username: {data['username']} | Champion: {data['champion_name']}")
+                print("--------------------")
+
+    def print_live_player_champion(self, champion_name):
+        print (f"Player's current champion: {champion_name}")

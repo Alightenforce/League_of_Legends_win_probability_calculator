@@ -15,6 +15,9 @@ from pyarrow.types import is_unicode
 load_dotenv()
 API_KEY = os.getenv("RIOT_API_KEY")
 
+BLUE_SIDE_ID = 100
+RED_SIDE_ID = 200
+
 class Player:
 
     def __init__(self, summoner_name, summoner_tag, region, count):
@@ -140,15 +143,62 @@ class Player:
 ###################################################### Mastery ##########################################################
 
 ###################################################### Live Match ##########################################################
-    def get_champion_in_current_match(self) -> str:
+    def get_all_player_info_in_current_match(self) -> dict[dict]:
+        player_info_dict = {}
         data = self.api.get_active_game(self.region_code, self.puuid)
         participants = data["participants"]
         for participant in participants:
-            if self.puuid == participant["puuid"]:
-                current_champion_id = participant["championId"]
-                dict_of_champions = self.find_champion_ids_to_names()
-                return dict_of_champions[current_champion_id]
-        return ("Could not find champion in current match")
+            player_info_dict[participant["puuid"]] = {
+                "riot_id": participant["riotId"],
+                "champion_id": participant["championId"],
+                "team_id": participant["teamId"]
+            }
+        return player_info_dict
+
+    def sort_current_match_champions_into_teams(self) -> dict[dict]:
+        player_info_dict = self.get_all_player_info_in_current_match()
+        teams = {"blue_team" : [] , "red_team" : []}
+        for puuid, data in player_info_dict.items():
+            if data["team_id"] == BLUE_SIDE_ID:
+                teams["blue_team"].append(data)
+            else:
+                teams["red_team"].append(data)
+        return teams
+
+
+    def get_champion_and_player_on_each_team_in_current_match(self) -> dict[dict]:
+        player_info_dict = self.sort_current_match_champions_into_teams()
+        dict_of_champions = self.find_champion_ids_to_names()
+        team_to_player_name_and_champion_dict = {"blue_team" : [] , "red_team" : []}
+        for team, data_list in player_info_dict.items():
+            for data in data_list:
+                champion_id = data["champion_id"]
+                username = data["riot_id"]
+                champion_name = dict_of_champions[champion_id]
+                player_pairing = {
+                    "username": username,
+                    "champion_name": champion_name
+                }
+
+                team_to_player_name_and_champion_dict[team].append(player_pairing)
+
+        return team_to_player_name_and_champion_dict
+
+    def print_champions_in_current_match(self):
+        match_data = self.get_champion_and_player_on_each_team_in_current_match()
+        self.print_stats.print_champions_in_current_match(match_data)
+
+    def get_live_player_champion (self):
+        team_to_player_name_and_champion_dict = self.get_champion_and_player_on_each_team_in_current_match()
+        for team, data_list in team_to_player_name_and_champion_dict.items():
+            for data in data_list:
+                if (self.summoner_name + "#" + self.summoner_tag == data["username"]):
+                    return data["champion_name"]
+        raise ValueError("Champion not found")
+
+    def print_live_player_champion(self):
+        my_champion = self.get_live_player_champion()
+        self.print_stats.get_live_player_champion(my_champion)
 
     def get_banned_champions_in_current_match(self) -> list:
         list_of_banned_champions_in_current_match = []
@@ -160,8 +210,6 @@ class Player:
         return list_of_banned_champions_in_current_match
 
     def match_banned_champion_id_to_name(self, list_of_banned_champions_in_current_match : list) -> dict:
-        BLUE_SIDE_ID = 100
-        RED_SIDE_ID = 200
         dict_of_champions = self.find_champion_ids_to_names()
         bans_dict = {
             "blue_side" : [],
